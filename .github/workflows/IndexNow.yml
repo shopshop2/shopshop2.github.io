@@ -39,7 +39,7 @@ jobs:
            for file in $CHANGED_FILES; do
              FILENAME=$(basename "$file")
              URL_PATH=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/--/-/g' | sed 's/\.md$//' | sed 's/-$//')
-             URL="https://guidekey.github.io/shopping/$URL_PATH/"
+             URL="https://shopshop2.github.io/shopping/$URL_PATH/"
              
              if [ -z "${seen_urls[$URL]}" ]; then
                seen_urls[$URL]=1
@@ -55,10 +55,10 @@ jobs:
            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
            -H "Content-Type: application/json" \
            -d "{
-             \"host\": \"guidekey.github.io\",
+             \"host\": \"shopshop2.github.io\",
              \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
              \"urlList\": $URL_LIST,
-             \"keyLocation\": \"https://guidekey.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
+             \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
            }")
            
            echo "📬 IndexNow API Response:"
