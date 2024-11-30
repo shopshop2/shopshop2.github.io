@@ -61,9 +61,9 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"host\": \"shopshop2.github.io\",
-              \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
+              \"key\": \"87ae650ca3ec4b2daec3bee8fa7ac2e3\",
               \"urlList\": $URL_LIST,
-              \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
+              \"keyLocation\": \"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt\"
             }")
 
             echo "IndexNow API Response:"
