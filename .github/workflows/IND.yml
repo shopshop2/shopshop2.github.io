@@ -32,7 +32,14 @@ jobs:
           ls -la _posts/ || echo "_posts directory not found"
       - name: Get changed files and submit URLs
         run: |
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep "^_posts/.*\.md$" | sort -u)
+          # 디버깅을 위한 정보 출력
+         echo "Checking git log for the last 24 hours:"
+         git log --since="24 hours ago" --pretty=format:"%h - %an, %ar : %s"
+         echo "\nChecking modified files:"
+         git log --since="24 hours ago" --name-only --pretty=format:
+
+         # 변경된 파일 찾기
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep "_posts/.*\.md$" || true)
 
 
 
