@@ -34,15 +34,12 @@ jobs:
 
      - name: Get changed files and submit URLs
        run: |
-         # 디버그용 출력 추가
-          echo "Listing all recent commits:"
-          git log --since="24 hours ago" --oneline
-          
-          echo "Listing all files in recent commits:"
-          git log --since="24 hours ago" --name-only --pretty=format:
-          
-          # 24시간 이내 변경된 마크다운 파일 찾기
-          CHANGED_FILES=$(git diff --name-only HEAD@{24.hours.ago} HEAD | grep "^_posts/.*\.md$" || true)
+         # 24시간 이내의 커밋에서 변경된 파일 찾기
+         CHANGED_FILES=$(git log --pretty=format:'%H - %ad - %s' --date=relative | \
+           awk '/hours ago/ {print $1}' | \
+           while read commit; do
+             git show --pretty="" --name-only $commit | grep "^_posts/.*\.md$" || true
+           done)
          
          if [ ! -z "$CHANGED_FILES" ]; then
            echo "Changed files found:"
