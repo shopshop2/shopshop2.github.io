@@ -1,77 +1,81 @@
-name: 'IndexNow with Git'
+name: 'IND'
 on:
   schedule:
     - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
-  workflow_dispatch:
+  workflow_dispatch:  # 수동 실행 옵션 유지
 
 jobs:
   submit-urls:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - name: Debug Info
+        run: |
+          echo "GitHub Context:"
+          echo "  Repository: ${{ github.repository }}"
+          echo "  Ref: ${{ github.ref }}"
+          echo "  Event: ${{ github.event_name }}"
+          
+          echo "Time Info:"
+          echo "  UTC: $(date -u)"
+          echo "  KST: $(TZ='Asia/Seoul' date)"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 1  # 24시간 이내의 커밋만 필요하므로 1로 설정
 
-      - name: Process New Posts
+      - name: Check Directory Structure
         run: |
-          SINCE_TIME=$(date -d "24 hours ago" -u +"%Y-%m-%d %H:%M:%S")
-          echo "Finding posts added since: $SINCE_TIME"
+          pwd
+          ls -la
+          echo "Posts directory content:"
+          ls -la *posts/ || echo "*posts directory not found"
+
+      - name: Get changed files and submit URLs
+        run: |
+          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --diff-filter=A --format="" "_posts/*.md")
           
-          # URLs를 임시 파일에 저장
-          URL_FILE="urls.txt"
-          > "$URL_FILE"
-          
-          while IFS= read -r file; do
-            if [ -n "$file" ]; then
-              # markdown 파일에서 제목 추출
-              TITLE=$(grep -m 1 "^title:" "$file" | cut -d'"' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-              if [ -z "$TITLE" ]; then
-                # 파일명에서 제목 생성
-                FILENAME=$(basename "$file")
-                TITLE=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/\.md$//')
-              fi
-              
-              # URL 슬러그 생성
-              SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9가-힣]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
-              
-              URL="https://shopshop2.github.io/shopping/${SLUG}/"
-              echo "$URL" >> "$URL_FILE"
-              echo "Generated URL: $URL"
-            fi
-          done < <(git log --since="$SINCE_TIME" --name-only --diff-filter=A --format="" "_posts/*.md")
-          
-          if [ -s "$URL_FILE" ]; then
-            # URLs를 JSON 배열로 변환
+          if [ ! -z "$CHANGED_FILES" ]; then
+            echo "Changed files found:"
+            echo "$CHANGED_FILES"
+            
             URL_LIST="["
-            while IFS= read -r url; do
-              URL_LIST="${URL_LIST}\"${url}\","
-            done < "$URL_FILE"
+            declare -A seen_urls
+            
+            for file in $CHANGED_FILES; do
+              FILENAME=$(basename "$file")
+              URL_PATH=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/--/-/g' | sed 's/\.md$//' | sed 's/-$//')
+              URL="https://shopshop2.github.io/shopping/$URL_PATH/"
+              
+              if [ -z "${seen_urls[$URL]}" ]; then
+                seen_urls[$URL]=1
+                URL_LIST="$URL_LIST\"$URL\","
+                echo "Processing: $URL"
+              fi
+            done
+            
             URL_LIST="${URL_LIST%,}]"
+            echo "Sample URL format:"
+            echo $URL_LIST | grep -o '"https://[^"]*"' | head -n 1
             
-            echo "Submitting URLs to IndexNow:"
-            echo "$URL_LIST"
-            
-            # 파일을 통해 curl 실행
-            echo "{
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+            -H "Content-Type: application/json" \
+            -d "{
               \"host\": \"shopshop2.github.io\",
               \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
               \"urlList\": $URL_LIST,
               \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
-            }" > request.json
-            
-            response=$(curl -s -w "\nHTTP Status: %{http_code}" \
-              -X POST "https://api.indexnow.org/indexnow" \
-              -H "Content-Type: application/json" \
-              -d @request.json)
+            }")
             
             echo "IndexNow API Response:"
             echo "$response"
             
             if echo "$response" | grep -q "HTTP Status: 200"; then
-              echo "✅ URLs successfully submitted!"
+              echo "URLs successfully submitted to search engines!"
             else
-              echo "❌ Error submitting URLs"
+              echo "Error submitting URLs. Please check the response above."
               exit 1
             fi
           else
