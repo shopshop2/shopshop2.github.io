@@ -1,4 +1,4 @@
-name: 'IND'
+name: 'IndexNow'
 on:
   schedule:
     - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
@@ -23,47 +23,41 @@ jobs:
 
       - name: Get changed files and submit URLs
         run: |
-          # 임시 파일 생성
-          TEMP_URL_FILE="urls.txt"
-          > "$TEMP_URL_FILE"
+          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --diff-filter=A --format="" "_posts/*.md")
           
-          # 새로 추가된 파일 찾기
-          while IFS= read -r file; do
-            if [ -n "$file" ]; then
-              FILENAME=$(basename "$file")
-              # .md 확장자 제거 및 날짜 부분 제거
-              URL_PATH=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/\.md$//')
-              
-              # URL 생성 및 저장
-              echo "https://shopshop2.github.io/shopping/$URL_PATH/" >> "$TEMP_URL_FILE"
-            fi
-          done < <(git log --since="24 hours ago" --name-only --diff-filter=A --format="" "_posts/*.md")
-          
-          if [ -s "$TEMP_URL_FILE" ]; then
-            echo "Found new posts:"
-            cat "$TEMP_URL_FILE"
+          if [ ! -z "$CHANGED_FILES" ]; then
+            echo "Changed files found:"
+            echo "$CHANGED_FILES"
             
-            # URLs를 JSON으로 변환
             URL_LIST="["
-            while IFS= read -r url; do
-              URL_LIST="$URL_LIST\"$url\","
-            done < "$TEMP_URL_FILE"
+            declare -A seen_urls
+            
+            for file in $CHANGED_FILES; do
+              # 파일 이름만 추출
+              FILENAME=$(basename "$file")
+              # 날짜 부분 제거, .md 제거
+              SLUG=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/\.md$//')
+              # URL 생성 (한글 유지)
+              URL="https://shopshop2.github.io/shopping/$SLUG"
+              
+              if [ -z "${seen_urls[$URL]}" ]; then
+                seen_urls[$URL]=1
+                URL_LIST="$URL_LIST\"$URL\","
+                echo "Processing: $URL"
+              fi
+            done
+            
             URL_LIST="${URL_LIST%,}]"
+            echo "URL List: $URL_LIST"
             
-            # JSON 요청 파일 생성
-            REQUEST_FILE="request.json"
-            echo "{
-              \"host\": \"shopshop2.github.io\",
-              \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
-              \"urlList\": $URL_LIST,
-              \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
-            }" > "$REQUEST_FILE"
-            
-            # API 요청
-            response=$(curl -s -w "\nHTTP Status: %{http_code}" \
-              -X POST "https://api.indexnow.org/indexnow" \
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
               -H "Content-Type: application/json" \
-              -d @"$REQUEST_FILE")
+              --data-raw "{
+                \"host\": \"shopshop2.github.io\",
+                \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
+                \"urlList\": $URL_LIST,
+                \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
+              }")
             
             echo "IndexNow API Response:"
             echo "$response"
