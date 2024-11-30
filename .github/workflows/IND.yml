@@ -34,15 +34,8 @@ jobs:
 
      - name: Get changed files and submit URLs
        run: |
-         # 각 파일의 마지막 커밋 시간 확인
-         echo "Checking last commit time for each file:"
-         for file in _posts/*.md; do
-           echo "File: $file"
-           git log -1 --format="%ad - %h" --date=relative -- "$file"
-         done
-
-         # 24시간 이내 push된 파일 찾기
-         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep "^_posts/.*\.md$")
+         # 24시간 이내의 커밋만 찾기
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: --no-merges | grep "^_posts/.*\.md$" || true)
          
          if [ ! -z "$CHANGED_FILES" ]; then
            echo "Changed files found:"
