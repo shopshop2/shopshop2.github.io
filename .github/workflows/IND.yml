@@ -29,7 +29,7 @@ jobs:
           pwd
           ls -la
           echo "Posts directory content:"
-          ls -la posts/ || echo "posts directory not found"
+          ls -la _posts/ || echo "_posts directory not found"
       - name: Get changed files and submit URLs
         run: |
           CHANGED_FILES=$(find _posts/ -name "*.md" -mtime -1 -type f)
