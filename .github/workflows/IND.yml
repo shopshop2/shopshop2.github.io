@@ -23,8 +23,7 @@ jobs:
      - name: Checkout repository
        uses: actions/checkout@v4
        with:
-         fetch-depth: 0  # 전체 히스토리를 가져옴
-         ref: ${{ github.ref }} # 현재 브랜치 명시
+         fetch-depth: 0
 
      - name: Check Directory Structure
        run: |
@@ -35,12 +34,15 @@ jobs:
 
      - name: Get changed files and submit URLs
        run: |
-         # 디버깅용 정보 출력
-         echo "Current branch: $(git branch --show-current)"
-         echo "Last commit: $(git log -1 --format="%h - %an, %ar : %s")"
-         
-         # 최근 24시간 동안 변경된 파일 찾기
-         CHANGED_FILES=$(find _posts/ -name "*.md" -mmin -1440)
+         # 각 파일의 마지막 커밋 시간 확인
+         echo "Checking last commit time for each file:"
+         for file in _posts/*.md; do
+           echo "File: $file"
+           git log -1 --format="%ad - %h" --date=relative -- "$file"
+         done
+
+         # 24시간 이내 push된 파일 찾기
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep "^_posts/.*\.md$")
          
          if [ ! -z "$CHANGED_FILES" ]; then
            echo "Changed files found:"
