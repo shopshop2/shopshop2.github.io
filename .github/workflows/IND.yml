@@ -1,4 +1,4 @@
-name: 'IND'
+name: 'IndexNow with Git'
 on:
   schedule:
     - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
@@ -13,66 +13,65 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Get and Submit New Posts
+      - name: Process New Posts
         run: |
           SINCE_TIME=$(date -d "24 hours ago" -u +"%Y-%m-%d %H:%M:%S")
-          
           echo "Finding posts added since: $SINCE_TIME"
           
-          # 새로 추가된 포스트 파일 찾기
-          NEW_FILES=$(git log --since="$SINCE_TIME" --name-only --diff-filter=A --format="" "_posts/*.md")
+          # URLs를 임시 파일에 저장
+          URL_FILE="urls.txt"
+          > "$URL_FILE"
           
-          if [ -n "$NEW_FILES" ]; then
-            echo "Found new posts:"
-            echo "$NEW_FILES"
-            
-            # URL 배열 생성
-            URL_LIST="["
-            
-            while IFS= read -r file; do
-              if [ -n "$file" ]; then
-                # 파일 내용에서 실제 permalink 추출
-                PERMALINK=$(grep -m 1 "^permalink:" "$file" | cut -d' ' -f2-)
-                
-                if [ -n "$PERMALINK" ]; then
-                  # permalink가 있는 경우 그것을 사용
-                  URL="https://shopshop2.github.io${PERMALINK}"
-                else
-                  # permalink가 없는 경우 Jekyll의 기본 URL 생성 규칙 사용
-                  FILENAME=$(basename "$file")
-                  # 날짜와 .md 제거
-                  SLUG=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/\.md$//')
-                  # URL 인코딩
-                  ENCODED_SLUG=$(echo -n "$SLUG" | perl -MURI::Escape -ne 'print uri_escape($_)')
-                  URL="https://shopshop2.github.io/shopping/${ENCODED_SLUG}/"
-                fi
-                
-                URL_LIST="$URL_LIST\"$URL\","
-                echo "Generated URL: $URL"
+          while IFS= read -r file; do
+            if [ -n "$file" ]; then
+              # markdown 파일에서 제목 추출
+              TITLE=$(grep -m 1 "^title:" "$file" | cut -d'"' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              if [ -z "$TITLE" ]; then
+                # 파일명에서 제목 생성
+                FILENAME=$(basename "$file")
+                TITLE=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/\.md$//')
               fi
-            done <<< "$NEW_FILES"
-            
+              
+              # URL 슬러그 생성
+              SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9가-힣]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//')
+              
+              URL="https://shopshop2.github.io/shopping/${SLUG}/"
+              echo "$URL" >> "$URL_FILE"
+              echo "Generated URL: $URL"
+            fi
+          done < <(git log --since="$SINCE_TIME" --name-only --diff-filter=A --format="" "_posts/*.md")
+          
+          if [ -s "$URL_FILE" ]; then
+            # URLs를 JSON 배열로 변환
+            URL_LIST="["
+            while IFS= read -r url; do
+              URL_LIST="${URL_LIST}\"${url}\","
+            done < "$URL_FILE"
             URL_LIST="${URL_LIST%,}]"
             
             echo "Submitting URLs to IndexNow:"
             echo "$URL_LIST"
             
-            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+            # 파일을 통해 curl 실행
+            echo "{
+              \"host\": \"shopshop2.github.io\",
+              \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
+              \"urlList\": $URL_LIST,
+              \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
+            }" > request.json
+            
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" \
+              -X POST "https://api.indexnow.org/indexnow" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"host\": \"shopshop2.github.io\",
-                \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
-                \"urlList\": $URL_LIST,
-                \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
-              }")
+              -d @request.json)
             
             echo "IndexNow API Response:"
             echo "$response"
             
             if echo "$response" | grep -q "HTTP Status: 200"; then
-              echo "✅ URLs successfully submitted to search engines!"
+              echo "✅ URLs successfully submitted!"
             else
-              echo "❌ Error submitting URLs. Please check the response above."
+              echo "❌ Error submitting URLs"
               exit 1
             fi
           else
