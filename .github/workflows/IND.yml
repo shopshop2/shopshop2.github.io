@@ -32,8 +32,8 @@ jobs:
           ls -la _posts/ || echo "_posts directory not found"
       - name: Get changed files and submit URLs
         run: |
-          YESTERDAY=$(date -d "24 hours ago" +%Y%m%d%H%M.%S)
-          CHANGED_FILES=$(find _posts/ -name "*.md" -type f -newermt "$YESTERDAY")
+          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep "^_posts/.*\.md$" | sort -u)
+
 
 
           if [ ! -z "$CHANGED_FILES" ]; then
