@@ -21,26 +21,35 @@ jobs:
           
       - name: Get modified files
         run: |
-          echo "Finding recently modified files..."
-          # git log로 먼저 변경된 파일 찾기
-          GIT_FILES=$(git log --since="24 hours ago" --name-only --format="" | grep "^_posts/.*\.md$" || true)
+          echo "Getting repository information..."
+          git branch -a
+          git status
           
-          # 실제 파일 중 24시간 이내 수정된 것 찾기
-          RESULT=""
-          while IFS= read -r file; do
-            if [ ! -z "$file" ] && [ -f "$file" ]; then
-              STAT=$(stat -c %Y "$file")
-              NOW=$(date +%s)
-              DIFF=$((NOW - STAT))
-              if [ $DIFF -le 86400 ]; then  # 24시간 = 86400초
-                RESULT="${RESULT}${file}"$'\n'
+          echo -e "\nGetting recent commits and files..."
+          git_log_output=$(git log --since="24 hours ago" --pretty=format:"%H" -n 1)
+          echo "Latest commit in 24 hours: $git_log_output"
+          
+          if [ ! -z "$git_log_output" ]; then
+            # 가장 최근 커밋과 그 이전 커밋을 비교
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $git_log_output | grep "^_posts/.*\.md$" || true)
+            
+            # 파일 존재 여부와 수정 시간 확인
+            RESULT=""
+            while IFS= read -r file; do
+              if [ ! -z "$file" ] && [ -f "$file" ]; then
+                STAT=$(stat -c %Y "$file")
+                NOW=$(date +%s)
+                DIFF=$((NOW - STAT))
+                echo "File: $file, Age: $DIFF seconds"
+                if [ $DIFF -le 86400 ]; then
+                  RESULT="${RESULT}${file}"$'\n'
+                fi
               fi
-            fi
-          done <<< "$GIT_FILES"
+            done <<< "$CHANGED_FILES"
+            CHANGED_FILES="$RESULT"
+          fi
           
-          # 결과 저장
-          CHANGED_FILES="$RESULT"
-          echo "Found files:"
+          echo -e "\nModified files in last 24 hours:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
