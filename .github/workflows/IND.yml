@@ -23,9 +23,18 @@ jobs:
         env:
           CHANGED_FILES: ""
         run: |
-          echo "Finding files modified in the last 24 hours..."
-          # 24시간 내의 커밋에서 수정된 파일만 찾기
-          CHANGED_FILES=$(git log --since="24 hours ago" --format="" --name-only | grep "^_posts/.*\.md$" | sort -u)
+          echo "Finding recently modified files..."
+          # git log로 파일 목록 가져오기
+          FILES_FROM_GIT=$(git log --since="24 hours ago" --format="" --name-only | grep "^_posts/.*\.md$" | sort -u)
+          
+          # 찾은 파일들 중 24시간 이내 수정된 파일만 필터링
+          CHANGED_FILES=""
+          for file in $FILES_FROM_GIT; do
+            if [ -f "$file" ] && [ $(find "$file" -mtime -1 -type f | wc -l) -gt 0 ]; then
+              CHANGED_FILES="$CHANGED_FILES$file"$'\n'
+            fi
+          done
+          
           echo "Modified files in the last 24 hours:"
           echo "$CHANGED_FILES"
           
