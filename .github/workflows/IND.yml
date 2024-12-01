@@ -19,18 +19,10 @@ jobs:
           python-version: '3.x'
       - name: Get changed files and submit URLs
         run: |
-          # Debug: Show git status
-          echo "Git Status:"
-          git status
-          
           # Debug: Show recent commits
           echo "Recent commits:"
-          git log --since="24 hours ago" --pretty=format:"%h - %an, %ar : %s"
-          
-          # Get changed files
-          echo -e "\nGetting modified files:"
-          CHANGED_FILES=$(git diff --name-only HEAD@{24.hours.ago} | grep -E "^_posts/.*\.md$" || true)
-          echo "Changed files found:"
+          CHANGED_FILES=$(git log --since="24 hours ago" --find-renames --diff-filter=A --name-only | grep -E "^_posts/.*\.md$" || true)
+          echo "Modified files:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
