@@ -16,39 +16,34 @@ jobs:
 
       - name: Get modified files
         run: |
-          # 24시간 이전의 커밋 해시 찾기
-          BEFORE=$(git rev-list -n 1 --before="24 hours ago" HEAD)
-          CURRENT=$(git rev-parse HEAD)
+          # git log로 직접 변경된 파일 찾기
+          echo "Last 10 commits:"
+          git log --oneline -n 10
           
-          echo "Comparing changes between:"
-          echo "Before (24h ago): $BEFORE"
-          echo "Current: $CURRENT"
+          echo -e "\nChecking for modified files..."
+          CHANGED_FILES=$(git log --since="24 hours ago" --stat --name-only --pretty=format:"" | grep -E "^_posts/.*\.md$" | sort -u)
           
-          # 두 시점 사이의 변경된 파일 찾기
-          CHANGED_FILES=$(git diff --name-only $BEFORE $CURRENT | grep -E "^_posts/.*\.md$" || true)
-          
-          echo -e "\nFiles changed between commits:"
-          echo "$CHANGED_FILES"
-          
-          # 파일 검증
-          RESULT=""
-          while IFS= read -r file; do
-            if [ ! -z "$file" ] && [ -f "$file" ]; then
-              COMMIT_TIME=$(git log -1 --format="%at" -- "$file")
-              NOW=$(date +%s)
-              HOURS_AGO=$(( (NOW - COMMIT_TIME) / 3600 ))
-              echo "File: $file (last commit: $HOURS_AGO hours ago)"
-              
-              if [ $HOURS_AGO -le 24 ]; then
+          if [ ! -z "$CHANGED_FILES" ]; then
+            echo "Found modified files:"
+            echo "$CHANGED_FILES"
+            
+            # 파일 별로 커밋 시간 확인
+            RESULT=""
+            while IFS= read -r file; do
+              if [ -f "$file" ]; then
+                LAST_COMMIT=$(git log -1 --pretty=format:"%h - %ar" -- "$file")
+                echo "File: $file"
+                echo "Last commit: $LAST_COMMIT"
                 RESULT="${RESULT}${file}"$'\n'
-                echo "-> Adding to process list"
               fi
-            fi
-          done <<< "$CHANGED_FILES"
-          
-          CHANGED_FILES="$RESULT"
-          echo -e "\nFinal list to process:"
-          echo "$CHANGED_FILES"
+            done <<< "$CHANGED_FILES"
+            
+            CHANGED_FILES="$RESULT"
+            echo -e "\nFiles to process:"
+            echo "$CHANGED_FILES"
+          else
+            echo "No files found in git log"
+          fi
           
           if [ ! -z "$CHANGED_FILES" ]; then
             python3 -c 'import os,json,urllib.parse,sys; def decode_url_path(path): return urllib.parse.unquote(path)[len("_posts/"):].split(".md")[0][11:] if urllib.parse.unquote(path).startswith("_posts/") and urllib.parse.unquote(path).startswith("2024-03-") else path; changed_files=os.environ.get("CHANGED_FILES","").splitlines(); url_list=[f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" for file in changed_files if file.strip()]; [print(f"Processing: {url}") for url in url_list]; data={"host":"shopshop2.github.io","key":"87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList":url_list,"keyLocation":"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None; json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else (print("No valid URLs found to process") or sys.exit(1))'
