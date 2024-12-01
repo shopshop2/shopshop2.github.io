@@ -22,7 +22,7 @@ jobs:
           CHANGED_FILES: ""
         run: |
           echo "Getting recent changes:"
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --format="" | grep -E "^_posts/.*\.md$" || true)
+          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty="format:" | sort -u | grep -E "^_posts/.*\.md$" || true)
           echo "Modified files in last 24 hours:"
           echo "$CHANGED_FILES"
           
