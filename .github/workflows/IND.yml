@@ -18,11 +18,10 @@ jobs:
        with:
          python-version: '3.x'
      - name: Get changed files and submit URLs
-       shell: bash
+       env:
+         CHANGED_FILES: ""
        run: |
          echo "Checking files in _posts directory:"
-         
-         # 24시간 이내에 수정된 마크다운 파일 찾기
          CHANGED_FILES=$(find _posts -name "*.md" -mtime -1 -type f)
          echo "Found files:"
          echo "$CHANGED_FILES"
@@ -98,8 +97,6 @@ EOF
            ls -la _posts/ || echo "_posts directory not found"
            exit 0
          fi
-       env:
-         CHANGED_FILES: "$CHANGED_FILES"
      - name: Report status
        if: always()
        run: |
