@@ -38,6 +38,20 @@ jobs:
          import json
          import urllib.parse
          
+         def decode_url_path(path):
+             # URL 디코딩
+             try:
+                 decoded = urllib.parse.unquote(path)
+                 # 파일명에서 날짜 제거 (YYYY-MM-DD-)
+                 if decoded.startswith('_posts/'):
+                     decoded = decoded[len('_posts/'):].split('.md')[0]
+                 if decoded.startswith('2024-03-'):
+                     decoded = decoded[11:]
+                 return decoded
+             except Exception as e:
+                 print(f"Error decoding path: {e}")
+                 return path
+         
          # Get changed files from git log
          cmd = "git log --since='24 hours ago' --name-only --pretty=format:"
          changed_files = subprocess.check_output(cmd, shell=True).decode('utf-8').strip().split('\n')
@@ -50,22 +64,20 @@ jobs:
              seen_urls = set()
              
              for file in md_files:
-                 # Extract filename without path and date prefix
-                 filename = os.path.basename(file)
-                 # Remove date prefix (YYYY-MM-DD-)
-                 url_path = filename[11:].replace('.md', '')
-                 # Remove double hyphens and trailing hyphens
-                 url_path = url_path.replace('--', '-').rstrip('-')
+                 # URL 디코딩 및 경로 처리
+                 decoded_path = decode_url_path(file)
+                 # 중복 하이픈 제거 및 끝의 하이픈 제거
+                 cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
                  
-                 # Create full URL
-                 url = f"https://shopshop2.github.io/shopping/{url_path}/"
+                 # URL 생성
+                 url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
                  
                  if url not in seen_urls:
                      seen_urls.add(url)
                      url_list.append(url)
                      print(f"Processing: {url}")
              
-             # Prepare API request
+             # API 요청 데이터 준비
              data = {
                  "host": "shopshop2.github.io",
                  "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
@@ -73,9 +85,9 @@ jobs:
                  "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
              }
              
-             # Save data for curl
+             # JSON 데이터 저장
              with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-                 json.dump(data, f, ensure_ascii=False)
+                 json.dump(data, f, ensure_ascii=False, indent=2)
              
              print("URL List prepared successfully")
          else:
