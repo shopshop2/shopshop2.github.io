@@ -18,46 +18,82 @@ jobs:
         with:
           python-version: '3.x'
       - name: Get changed files and submit URLs
-        env:
-          CHANGED_FILES: ""
         run: |
-          echo "Checking files in _posts directory:"
-          CHANGED_FILES=$(find _posts -name "*.md" -mtime -1 -type f)
-          echo "Found files:"
+          echo "Getting recent changes:"
+          # Get files modified in the last 24 hours
+          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --format="" | grep -E "^_posts/.*\.md$" || true)
+          echo "Modified files in last 24 hours:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
-            python3 -c 'import os,json,urllib.parse,sys;def decode_url_path(path):    try:        decoded = urllib.parse.unquote(path);        if decoded.startswith("_posts/"):            decoded = decoded[len("_posts/"):].split(".md")[0];        if decoded.startswith("2024-03-"):            decoded = decoded[11:];        return decoded;    except Exception as e:        print(f"Error decoding path: {e}", file=sys.stderr);        return path;changed_files = os.environ["CHANGED_FILES"].split("\n");url_list = [];seen_urls = set();[url_list.append(f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" ) for file in changed_files if file.strip() and f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" not in seen_urls and not seen_urls.add(f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" )];[print(f"Processing: {url}") for url in url_list];data = {"host": "shopshop2.github.io","key": "87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList": url_list,"keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None;json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else print("No valid URLs found to process") or sys.exit(1)'
+            python3 << 'EOF'
+import os
+import json
+import urllib.parse
+import sys
+
+def decode_url_path(path):
+    try:
+        decoded = urllib.parse.unquote(path)
+        if decoded.startswith('_posts/'):
+            decoded = decoded[len('_posts/'):].split('.md')[0]
+        if decoded.startswith('2024-03-'):
+            decoded = decoded[11:]
+        return decoded
+    except Exception as e:
+        print(f"Error decoding path: {e}", file=sys.stderr)
+        return path
+
+def create_url(path):
+    parts = decode_url_path(path).split('-')
+    filtered_parts = [p for p in parts if p]
+    return f"https://shopshop2.github.io/shopping/{'-'.join(filtered_parts)}/"
+
+changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
+url_list = []
+seen_urls = set()
+
+for file in changed_files:
+    if file.strip():
+        url = create_url(file)
+        if url not in seen_urls:
+            seen_urls.add(url)
+            url_list.append(url)
+            print(f"Processing: {url}")
+
+if url_list:
+    data = {
+        "host": "shopshop2.github.io",
+        "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+        "urlList": url_list,
+        "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+    }
+    with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("URL List prepared successfully")
+else:
+    print("No valid URLs found to process")
+    sys.exit(1)
+EOF
+
+          if [ -f "/tmp/indexnow_data.json" ]; then
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/indexnow_data.json)
             
-            if [ -f "/tmp/indexnow_data.json" ]; then
-              response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-                -H "Content-Type: application/json" \
-                -d @/tmp/indexnow_data.json)
-              
-              echo "IndexNow API Response:"
-              echo "$response"
-              
-              if echo "$response" | grep -q "HTTP Status: 200"; then
-                echo "URLs successfully submitted to search engines!"
-              else
-                echo "Error submitting URLs. Please check the response above."
-                exit 1
-              fi
+            echo "IndexNow API Response:"
+            echo "$response"
+            
+            if echo "$response" | grep -q "HTTP Status: 200"; then
+              echo "URLs successfully submitted to search engines!"
+            else
+              echo "Error submitting URLs. Please check the response above."
+              exit 1
             fi
+          fi
           else
             echo "No markdown files found in _posts directory in the last 24 hours"
-            echo "Current directory contents:"
-            ls -la
-            echo "Posts directory contents:"
-            ls -la _posts/ || echo "_posts directory not found"
             exit 0
           fi
-      - name: Report status
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ IndexNow submission completed successfully"
-          else
-            echo "❌ IndexNow submission failed"
-          fi
-          echo "Workflow completed at: $(date)"
+        env:
+          CHANGED_FILES: "$CHANGED_FILES"
