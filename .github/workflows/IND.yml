@@ -26,11 +26,9 @@ jobs:
 
       - name: Get changed files and submit URLs
         run: |
-          # 오늘 날짜 가져오기 (KST 기준)
           TODAY=$(TZ='Asia/Seoul' date +%Y-%m-%d)
           echo "Today's date (KST): $TODAY"
           
-          # 오늘 날짜로 시작하는 마크다운 파일 찾기
           CHANGED_FILES=$(find _posts/ -name "${TODAY}-*.md" -type f)
           
           if [ ! -z "$CHANGED_FILES" ]; then
