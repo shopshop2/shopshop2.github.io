@@ -1,7 +1,7 @@
 name: 'IND'
 on:
   schedule:
-    - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
+    - cron: '25 19 * * *'
   workflow_dispatch:
 jobs:
   submit-urls:
@@ -26,30 +26,31 @@ jobs:
           git status
           
           echo -e "\nGetting recent commits and files..."
-          git_log_output=$(git log --since="24 hours ago" --pretty=format:"%H" -n 1)
-          echo "Latest commit in 24 hours: $git_log_output"
+          # 24시간 전 시간을 구함
+          SINCE=$(date -d '24 hours ago' +%s)
+          echo "Checking commits since: $(date -d "@$SINCE")"
           
-          if [ ! -z "$git_log_output" ]; then
-            # 가장 최근 커밋과 그 이전 커밋을 비교
-            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $git_log_output | grep "^_posts/.*\.md$" || true)
-            
-            # 파일 존재 여부와 수정 시간 확인
-            RESULT=""
-            while IFS= read -r file; do
-              if [ ! -z "$file" ] && [ -f "$file" ]; then
-                STAT=$(stat -c %Y "$file")
-                NOW=$(date +%s)
-                DIFF=$((NOW - STAT))
-                echo "File: $file, Age: $DIFF seconds"
-                if [ $DIFF -le 86400 ]; then
-                  RESULT="${RESULT}${file}"$'\n'
-                fi
+          # 변경된 파일 찾기
+          CHANGED_FILES=$(git log --since="@$SINCE" --name-only --no-merges --pretty=format: | grep -E "^_posts/.*\.md$" | sort -u)
+          
+          # 파일 존재 여부와 수정 시간 확인
+          RESULT=""
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              STAT=$(stat -c %Y "$file")
+              NOW=$(date +%s)
+              DIFF=$((NOW - STAT))
+              echo "File: $file, Age: $DIFF seconds ($(($DIFF / 3600)) hours old)"
+              if [ $DIFF -le 86400 ]; then  # 24시간 = 86400초
+                RESULT="${RESULT}${file}"$'\n'
+                echo "Added to result: $file"
               fi
-            done <<< "$CHANGED_FILES"
-            CHANGED_FILES="$RESULT"
-          fi
+            fi
+          done <<< "$CHANGED_FILES"
           
-          echo -e "\nModified files in last 24 hours:"
+          # 결과 저장
+          CHANGED_FILES="$RESULT"
+          echo -e "\nFinal modified files in last 24 hours:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
