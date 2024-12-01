@@ -16,33 +16,31 @@ jobs:
 
       - name: Get modified files
         run: |
-          # git log로 직접 변경된 파일 찾기
           echo "Last 10 commits:"
           git log --oneline -n 10
           
-          echo -e "\nChecking for modified files..."
-          CHANGED_FILES=$(git log --since="24 hours ago" --stat --name-only --pretty=format:"" | grep -E "^_posts/.*\.md$" | sort -u)
-          
-          if [ ! -z "$CHANGED_FILES" ]; then
-            echo "Found modified files:"
-            echo "$CHANGED_FILES"
+          # 배치 업로드 커밋의 파일 목록 가져오기
+          BATCH_COMMIT=$(git log --format="%H" --grep="Batch upload" -n 1)
+          if [ ! -z "$BATCH_COMMIT" ]; then
+            echo -e "\nFound batch upload commit: $BATCH_COMMIT"
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $BATCH_COMMIT | grep -E "^_posts/.*\.md$" || true)
             
-            # 파일 별로 커밋 시간 확인
-            RESULT=""
-            while IFS= read -r file; do
-              if [ -f "$file" ]; then
-                LAST_COMMIT=$(git log -1 --pretty=format:"%h - %ar" -- "$file")
-                echo "File: $file"
-                echo "Last commit: $LAST_COMMIT"
-                RESULT="${RESULT}${file}"$'\n'
-              fi
-            done <<< "$CHANGED_FILES"
-            
-            CHANGED_FILES="$RESULT"
-            echo -e "\nFiles to process:"
-            echo "$CHANGED_FILES"
-          else
-            echo "No files found in git log"
+            if [ ! -z "$CHANGED_FILES" ]; then
+              echo "Files from batch upload:"
+              echo "$CHANGED_FILES"
+              
+              # 각 파일의 커밋 정보 출력
+              RESULT=""
+              while IFS= read -r file; do
+                if [ -f "$file" ]; then
+                  COMMIT_INFO=$(git log -1 --format="%h - %ar" -- "$file")
+                  echo "File: $file ($COMMIT_INFO)"
+                  RESULT="${RESULT}${file}"$'\n'
+                fi
+              done <<< "$CHANGED_FILES"
+              
+              CHANGED_FILES="$RESULT"
+            fi
           fi
           
           if [ ! -z "$CHANGED_FILES" ]; then
