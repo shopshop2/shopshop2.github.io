@@ -16,33 +16,38 @@ jobs:
 
       - name: Get modified files
         run: |
-          # 모든 변경 사항 가져오기
-          git fetch --all --prune
-          git pull --all
+          # 24시간 이전의 커밋 해시 찾기
+          BEFORE=$(git rev-list -n 1 --before="24 hours ago" HEAD)
+          CURRENT=$(git rev-parse HEAD)
           
-          # 24시간 이내의 커밋들에서 변경된 파일 찾기
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty="" | grep -E "^_posts/.*\.md$" | sort -u || true)
+          echo "Comparing changes between:"
+          echo "Before (24h ago): $BEFORE"
+          echo "Current: $CURRENT"
           
-          echo "Files changed in last 24 hours:"
+          # 두 시점 사이의 변경된 파일 찾기
+          CHANGED_FILES=$(git diff --name-only $BEFORE $CURRENT | grep -E "^_posts/.*\.md$" || true)
+          
+          echo -e "\nFiles changed between commits:"
           echo "$CHANGED_FILES"
           
-          # 파일 수정 시간 확인
+          # 파일 검증
           RESULT=""
           while IFS= read -r file; do
             if [ ! -z "$file" ] && [ -f "$file" ]; then
-              STAT=$(git log -1 --format="%ct" -- "$file")
+              COMMIT_TIME=$(git log -1 --format="%at" -- "$file")
               NOW=$(date +%s)
-              DIFF=$((NOW - STAT))
-              echo "File: $file (modified $((DIFF / 3600)) hours ago)"
-              if [ $DIFF -le 86400 ]; then
+              HOURS_AGO=$(( (NOW - COMMIT_TIME) / 3600 ))
+              echo "File: $file (last commit: $HOURS_AGO hours ago)"
+              
+              if [ $HOURS_AGO -le 24 ]; then
                 RESULT="${RESULT}${file}"$'\n'
-                echo "-> Added to processing list"
+                echo "-> Adding to process list"
               fi
             fi
           done <<< "$CHANGED_FILES"
           
           CHANGED_FILES="$RESULT"
-          echo -e "\nFinal list of files to process:"
+          echo -e "\nFinal list to process:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
