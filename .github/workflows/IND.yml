@@ -29,41 +29,38 @@ jobs:
      - name: Get changed files and submit URLs
        run: |
          echo "Checking recent commits:"
-         git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
+         # 변경된 파일 목록을 직접 찾아서 변수에 저장
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
          
-         # Python script to handle URL conversion
-         python3 - <<EOF
+         if [ ! -z "$CHANGED_FILES" ]; then
+           # Python script to handle URL conversion
+           python3 - <<EOF
          import os
-         import subprocess
          import json
          import urllib.parse
+         import sys
          
          def decode_url_path(path):
-             # URL 디코딩
              try:
+                 # URL 디코딩
                  decoded = urllib.parse.unquote(path)
-                 # 파일명에서 날짜 제거 (YYYY-MM-DD-)
+                 # 날짜 부분 제거
                  if decoded.startswith('_posts/'):
                      decoded = decoded[len('_posts/'):].split('.md')[0]
                  if decoded.startswith('2024-03-'):
                      decoded = decoded[11:]
                  return decoded
              except Exception as e:
-                 print(f"Error decoding path: {e}")
+                 print(f"Error decoding path: {e}", file=sys.stderr)
                  return path
          
-         # Get changed files from git log
-         cmd = "git log --since='24 hours ago' --name-only --pretty=format:"
-         changed_files = subprocess.check_output(cmd, shell=True).decode('utf-8').strip().split('\n')
+         # 환경 변수에서 변경된 파일 목록 읽기
+         changed_files = os.environ['CHANGED_FILES'].split('\n')
+         url_list = []
+         seen_urls = set()
          
-         # Filter markdown files from _posts directory
-         md_files = [f for f in changed_files if f.startswith('_posts/') and f.endswith('.md')]
-         
-         if md_files:
-             url_list = []
-             seen_urls = set()
-             
-             for file in md_files:
+         for file in changed_files:
+             if file.strip():  # 빈 줄 무시
                  # URL 디코딩 및 경로 처리
                  decoded_path = decode_url_path(file)
                  # 중복 하이픈 제거 및 끝의 하이픈 제거
@@ -76,7 +73,8 @@ jobs:
                      seen_urls.add(url)
                      url_list.append(url)
                      print(f"Processing: {url}")
-             
+         
+         if url_list:
              # API 요청 데이터 준비
              data = {
                  "host": "shopshop2.github.io",
@@ -91,25 +89,31 @@ jobs:
              
              print("URL List prepared successfully")
          else:
-             print("No markdown files found in _posts directory in the last 24 hours")
-             exit(0)
+             print("No valid URLs found to process")
+             sys.exit(1)
          EOF
          
-         if [ -f "/tmp/indexnow_data.json" ]; then
-           response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-             -H "Content-Type: application/json" \
-             -d @/tmp/indexnow_data.json)
-           
-           echo "IndexNow API Response:"
-           echo "$response"
-           
-           if echo "$response" | grep -q "HTTP Status: 200"; then
-             echo "URLs successfully submitted to search engines!"
-           else
-             echo "Error submitting URLs. Please check the response above."
-             exit 1
+           if [ -f "/tmp/indexnow_data.json" ]; then
+             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+               -H "Content-Type: application/json" \
+               -d @/tmp/indexnow_data.json)
+             
+             echo "IndexNow API Response:"
+             echo "$response"
+             
+             if echo "$response" | grep -q "HTTP Status: 200"; then
+               echo "URLs successfully submitted to search engines!"
+             else
+               echo "Error submitting URLs. Please check the response above."
+               exit 1
+             fi
            fi
+         else
+           echo "No markdown files found in _posts directory in the last 24 hours"
+           exit 0
          fi
+       env:
+         CHANGED_FILES: "$CHANGED_FILES"
      - name: Report status
        if: always()
        run: |
