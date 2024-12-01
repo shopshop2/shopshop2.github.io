@@ -20,22 +20,27 @@ jobs:
           python-version: '3.x'
           
       - name: Get modified files
-        env:
-          CHANGED_FILES: ""
         run: |
           echo "Finding recently modified files..."
-          # git log로 파일 목록 가져오기
-          FILES_FROM_GIT=$(git log --since="24 hours ago" --format="" --name-only | grep "^_posts/.*\.md$" | sort -u)
+          # git log로 먼저 변경된 파일 찾기
+          GIT_FILES=$(git log --since="24 hours ago" --name-only --format="" | grep "^_posts/.*\.md$" || true)
           
-          # 찾은 파일들 중 24시간 이내 수정된 파일만 필터링
-          CHANGED_FILES=""
-          for file in $FILES_FROM_GIT; do
-            if [ -f "$file" ] && [ $(find "$file" -mtime -1 -type f | wc -l) -gt 0 ]; then
-              CHANGED_FILES="$CHANGED_FILES$file"$'\n'
+          # 실제 파일 중 24시간 이내 수정된 것 찾기
+          RESULT=""
+          while IFS= read -r file; do
+            if [ ! -z "$file" ] && [ -f "$file" ]; then
+              STAT=$(stat -c %Y "$file")
+              NOW=$(date +%s)
+              DIFF=$((NOW - STAT))
+              if [ $DIFF -le 86400 ]; then  # 24시간 = 86400초
+                RESULT="${RESULT}${file}"$'\n'
+              fi
             fi
-          done
+          done <<< "$GIT_FILES"
           
-          echo "Modified files in the last 24 hours:"
+          # 결과 저장
+          CHANGED_FILES="$RESULT"
+          echo "Found files:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
@@ -105,3 +110,5 @@ jobs:
             echo "No markdown files found in _posts directory in the last 24 hours"
             exit 0
           fi
+        env:
+          CHANGED_FILES: "$CHANGED_FILES"
