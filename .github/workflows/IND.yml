@@ -19,10 +19,26 @@ jobs:
           python-version: '3.x'
       - name: Get changed files and submit URLs
         run: |
-          # Debug: Show recent commits
-          echo "Recent commits:"
-          CHANGED_FILES=$(git log --since="24 hours ago" --find-renames --diff-filter=A --name-only | grep -E "^_posts/.*\.md$" || true)
-          echo "Modified files:"
+          # Find commits in last 24 hours
+          ONE_DAY_AGO=$(date -d '24 hours ago' +%s)
+          echo "Looking for commits since $(date -d @$ONE_DAY_AGO)"
+          
+          # Get list of all commits in the last 24 hours
+          COMMITS=$(git rev-list --since="24 hours ago" --reverse HEAD)
+          
+          # Get all changed files from these commits
+          CHANGED_FILES=""
+          for commit in $COMMITS; do
+            FILES=$(git diff-tree --no-commit-id --name-only -r $commit | grep -E "^_posts/.*\.md$" || true)
+            if [ ! -z "$FILES" ]; then
+              CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
+            fi
+          done
+          
+          # Remove duplicates and empty lines
+          CHANGED_FILES=$(echo "$CHANGED_FILES" | sort -u | grep . || true)
+          
+          echo "Changed files found:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
