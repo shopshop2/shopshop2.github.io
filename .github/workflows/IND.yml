@@ -14,15 +14,6 @@ jobs:
         with:
           fetch-depth: 0
           
-      - name: Setup Git
-        run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-          git remote update
-          git fetch --all --force
-          git pull --force origin master
-          git status
-          
       - name: Install Python
         uses: actions/setup-python@v4
         with:
@@ -32,9 +23,10 @@ jobs:
         env:
           CHANGED_FILES: ""
         run: |
-          echo "Finding recently modified files..."
-          CHANGED_FILES=$(find _posts -name "*.md" -mtime -1 -type f)
-          echo "Recently modified files:"
+          echo "Finding files modified in the last 24 hours..."
+          # 24시간 내의 커밋에서 수정된 파일만 찾기
+          CHANGED_FILES=$(git log --since="24 hours ago" --format="" --name-only | grep "^_posts/.*\.md$" | sort -u)
+          echo "Modified files in the last 24 hours:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
