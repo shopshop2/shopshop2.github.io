@@ -1,50 +1,50 @@
 name: 'IND'
 on:
-schedule:
-  - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
-workflow_dispatch:
+ schedule:
+   - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
+ workflow_dispatch:
 jobs:
-submit-urls:
-  runs-on: ubuntu-latest
-  permissions:
-    contents: read
-  steps:
-    - name: Debug Info
-      run: |
-        echo "GitHub Context:"
-        echo "  Repository: ${{ github.repository }}"
-        echo "  Ref: ${{ github.ref }}"
-        echo "  Event: ${{ github.event_name }}"
-        echo "Time Info:"
-        echo "  UTC: $(date -u)"
-        echo "  KST: $(TZ='Asia/Seoul' date)"
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Install Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-    - name: Get changed files and submit URLs
-      run: |
-        echo "Checking recent commits:"
-        # Git 저장소 상태 확인
-        git status
-        
-        # 모든 브랜치 페치
-        git fetch --all
-        
-        # 24시간 이내의 커밋 로그 확인 (전체 경로 포함)
-        git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
-        
-        # 변경된 파일 찾기 (전체 경로 사용)
-        CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
-        echo "Found files:"
-        echo "$CHANGED_FILES"
-        
-        if [ ! -z "$CHANGED_FILES" ]; then
-          python3 - <<EOF
+ submit-urls:
+   runs-on: ubuntu-latest
+   permissions:
+     contents: read
+   steps:
+     - name: Debug Info
+       run: |
+         echo "GitHub Context:"
+         echo "  Repository: ${{ github.repository }}"
+         echo "  Ref: ${{ github.ref }}"
+         echo "  Event: ${{ github.event_name }}"
+         echo "Time Info:"
+         echo "  UTC: $(date -u)"
+         echo "  KST: $(TZ='Asia/Seoul' date)"
+     - name: Checkout repository
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
+     - name: Install Python
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.x'
+     - name: Get changed files and submit URLs
+       run: |
+         echo "Checking recent commits:"
+         # Git 저장소 상태 확인
+         git status
+         
+         # 모든 브랜치 페치
+         git fetch --all
+         
+         # 24시간 이내의 커밋 로그 확인 (전체 경로 포함)
+         git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
+         
+         # 변경된 파일 찾기 (전체 경로 사용)
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
+         echo "Found files:"
+         echo "$CHANGED_FILES"
+         
+         if [ ! -z "$CHANGED_FILES" ]; then
+           python3 - <<EOF
 import os
 import json
 import urllib.parse
@@ -102,39 +102,39 @@ else:
    print("No valid URLs found to process")
    sys.exit(1)
 EOF
-          
-          if [ -f "/tmp/indexnow_data.json" ]; then
-            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-              -H "Content-Type: application/json" \
-              -d @/tmp/indexnow_data.json)
-            
-            echo "IndexNow API Response:"
-            echo "$response"
-            
-            if echo "$response" | grep -q "HTTP Status: 200"; then
-              echo "URLs successfully submitted to search engines!"
-            else
-              echo "Error submitting URLs. Please check the response above."
-              exit 1
-            fi
-          fi
-        else
-          echo "No markdown files found in _posts directory in the last 24 hours"
-          # 디버깅을 위한 추가 정보 출력
-          echo "Current directory contents:"
-          ls -la
-          echo "Posts directory contents:"
-          ls -la _posts/ || echo "_posts directory not found"
-          exit 0
-        fi
-      env:
-        CHANGED_FILES: "$CHANGED_FILES"
-    - name: Report status
-      if: always()
-      run: |
-        if [ "${{ job.status }}" = "success" ]; then
-          echo "✅ IndexNow submission completed successfully"
-        else
-          echo "❌ IndexNow submission failed"
-        fi
-        echo "Workflow completed at: $(date)"
+           
+           if [ -f "/tmp/indexnow_data.json" ]; then
+             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+               -H "Content-Type: application/json" \
+               -d @/tmp/indexnow_data.json)
+             
+             echo "IndexNow API Response:"
+             echo "$response"
+             
+             if echo "$response" | grep -q "HTTP Status: 200"; then
+               echo "URLs successfully submitted to search engines!"
+             else
+               echo "Error submitting URLs. Please check the response above."
+               exit 1
+             fi
+           fi
+         else
+           echo "No markdown files found in _posts directory in the last 24 hours"
+           # 디버깅을 위한 추가 정보 출력
+           echo "Current directory contents:"
+           ls -la
+           echo "Posts directory contents:"
+           ls -la _posts/ || echo "_posts directory not found"
+           exit 0
+         fi
+       env:
+         CHANGED_FILES: "$CHANGED_FILES"
+     - name: Report status
+       if: always()
+       run: |
+         if [ "${{ job.status }}" = "success" ]; then
+           echo "✅ IndexNow submission completed successfully"
+         else
+           echo "❌ IndexNow submission failed"
+         fi
+         echo "Workflow completed at: $(date)"
