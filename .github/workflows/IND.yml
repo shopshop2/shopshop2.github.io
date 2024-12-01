@@ -19,21 +19,18 @@ jobs:
           python-version: '3.x'
       - name: Get changed files and submit URLs
         run: |
-          echo "Current branch info:"
-          git branch -vv
-          echo "Repository status:"
-          git status
+          # 커밋별로 파일 변경 확인
+          CHANGED_FILES=$(for commit in $(git rev-list -n 1 HEAD); do
+            git show --pretty="" --name-only $commit | grep -E "^_posts/.*\.md$" || true
+          done)
           
-          # 깊이 있는 히스토리 가져오기
-          git fetch --unshallow
-          
-          echo "Recent git history:"
-          git log --since="24 hours ago" --name-only | grep "_posts/.*\.md$" || true
-          
-          # 변경된 파일 찾기
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --format= | grep -E "^_posts/.*\.md$" || true)
-          echo "Modified files:"
+          # 최근 커밋에서 변경된 파일 목록
+          echo "Files from recent commits:"
           echo "$CHANGED_FILES"
+          
+          # 현재 작업 디렉토리의 파일 목록도 확인
+          echo "Files in _posts directory:"
+          ls -la _posts/
           
           if [ ! -z "$CHANGED_FILES" ]; then
             python3 - <<'END_PYTHON'
