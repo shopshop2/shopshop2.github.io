@@ -1,55 +1,88 @@
 name: 'IND'
 on:
- schedule:
-   - cron: '25 19 * * *'
- workflow_dispatch:
+  schedule:
+    - cron: '50 14 * * *'  # UTC 14:50 = KST 23:50
+  workflow_dispatch:
 jobs:
- submit-urls:
-   runs-on: ubuntu-latest
-   permissions:
-     contents: read
-   steps:
-     - name: Checkout repository
-       uses: actions/checkout@v4
-       with:
-         fetch-depth: 0
+  submit-urls:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Debug Info
+        run: |
+          echo "GitHub Context:"
+          echo "  Repository: ${{ github.repository }}"
+          echo "  Ref: ${{ github.ref }}"
+          echo "  Event: ${{ github.event_name }}"
+          echo "Time Info:"
+          echo "  UTC: $(date -u)"
+          echo "  KST: $(TZ='Asia/Seoul' date)"
 
-     - name: Get modified files
-       run: |
-         echo "Getting files from recent batch upload commit..."
-         # 이전 commit 해시
-         prev_commit=d09218d4
-         
-         # 현재 commit 해시  
-         curr_commit=adff2f43
-         
-         echo "Checking files between $prev_commit and $curr_commit"
-         
-         CHANGED_FILES=$(git diff --name-only $prev_commit $curr_commit | grep -E "^_posts/.*\.md$" || true)
-         echo "Found files:"
-         echo "$CHANGED_FILES"
-         
-         if [ ! -z "$CHANGED_FILES" ]; then
-           python3 -c 'import os,json,urllib.parse,sys; def decode_url_path(path): return urllib.parse.unquote(path)[len("_posts/"):].split(".md")[0][11:] if urllib.parse.unquote(path).startswith("_posts/") and urllib.parse.unquote(path).startswith("2024-03-") else path; changed_files=os.environ.get("CHANGED_FILES","").splitlines(); url_list=[f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" for file in changed_files if file.strip()]; [print(f"Processing: {url}") for url in url_list]; data={"host":"shopshop2.github.io","key":"87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList":url_list,"keyLocation":"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None; json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else (print("No valid URLs found to process") or sys.exit(1))'
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-           if [ -f "/tmp/indexnow_data.json" ]; then
-             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-               -H "Content-Type: application/json" \
-               -d @/tmp/indexnow_data.json)
-             
-             echo "IndexNow API Response:"
-             echo "$response"
-             
-             if echo "$response" | grep -q "HTTP Status: 200"; then
-               echo "URLs successfully submitted to search engines!"
-             else
-               echo "Error submitting URLs. Please check the response above."
-               exit 1
-             fi
-           fi
-         else
-           echo "No markdown files found between commits"
-           exit 0
-         fi
-       env:
-         CHANGED_FILES: "$CHANGED_FILES"
+      - name: Get changed files and submit URLs
+        run: |
+          # 오늘 날짜 가져오기 (KST 기준)
+          TODAY=$(TZ='Asia/Seoul' date +%Y-%m-%d)
+          echo "Today's date (KST): $TODAY"
+          
+          # 오늘 날짜로 시작하는 마크다운 파일 찾기
+          CHANGED_FILES=$(find _posts/ -name "${TODAY}-*.md" -type f)
+          
+          if [ ! -z "$CHANGED_FILES" ]; then
+            echo "Files found for today ($TODAY):"
+            echo "$CHANGED_FILES"
+            
+            URL_LIST="["
+            declare -A seen_urls
+            
+            for file in $CHANGED_FILES; do
+              FILENAME=$(basename "$file")
+              URL_PATH=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/--/-/g' | sed 's/\.md$//' | sed 's/-$//')
+              URL="https://shopshop2.github.io/shopping/$URL_PATH/"
+              
+              if [ -z "${seen_urls[$URL]}" ]; then
+                seen_urls[$URL]=1
+                URL_LIST="$URL_LIST\"$URL\","
+                echo "Processing: $URL"
+              fi
+            done
+            
+            URL_LIST="${URL_LIST%,}]"
+            
+            # API 요청
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"host\": \"shopshop2.github.io\",
+                \"key\": \"${{ secrets.INDEXNOW_KEY }}\",
+                \"urlList\": $URL_LIST,
+                \"keyLocation\": \"https://shopshop2.github.io/${{ secrets.INDEXNOW_KEY }}.txt\"
+              }")
+            
+            echo "IndexNow API Response:"
+            echo "$response"
+            
+            if echo "$response" | grep -q "HTTP Status: 200"; then
+              echo "URLs successfully submitted to search engines!"
+            else
+              echo "Error submitting URLs. Please check the response above."
+              exit 1
+            fi
+          else
+            echo "No markdown files found for today ($TODAY)"
+          fi
+
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ IndexNow submission completed successfully"
+          else
+            echo "❌ IndexNow submission failed"
+          fi
+          echo "Workflow completed at: $(TZ='Asia/Seoul' date)"
