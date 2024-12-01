@@ -3,7 +3,6 @@ on:
  schedule:
    - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
  workflow_dispatch:
-
 jobs:
  submit-urls:
    runs-on: ubuntu-latest
@@ -19,58 +18,75 @@ jobs:
          echo "Time Info:"
          echo "  UTC: $(date -u)"
          echo "  KST: $(TZ='Asia/Seoul' date)"
-
      - name: Checkout repository
        uses: actions/checkout@v4
        with:
          fetch-depth: 0
-
-     - name: Check Directory Structure
-       run: |
-         pwd
-         ls -la
-         echo "Posts directory content:"
-         ls -la _posts/ || echo "_posts directory not found"
-
+     - name: Install Python
+       uses: actions/setup-python@v4
+       with:
+         python-version: '3.x'
      - name: Get changed files and submit URLs
        run: |
          echo "Checking recent commits:"
          git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
          
-         # 24시간 이내의 커밋에서 변경된 파일 찾기
-         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$")
+         # Python script to handle URL conversion
+         python3 - <<EOF
+         import os
+         import subprocess
+         import json
+         import urllib.parse
          
-         if [ ! -z "$CHANGED_FILES" ]; then
-           echo "Changed files found:"
-           echo "$CHANGED_FILES"
-           
-           URL_LIST="["
-           declare -A seen_urls
-           
-           for file in $CHANGED_FILES; do
-             FILENAME=$(basename "$file")
-             URL_PATH=$(echo "$FILENAME" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}-//' | sed 's/--/-/g' | sed 's/\.md$//' | sed 's/-$//')
-             URL="https://shopshop2.github.io/shopping/$URL_PATH/"
+         # Get changed files from git log
+         cmd = "git log --since='24 hours ago' --name-only --pretty=format:"
+         changed_files = subprocess.check_output(cmd, shell=True).decode('utf-8').strip().split('\n')
+         
+         # Filter markdown files from _posts directory
+         md_files = [f for f in changed_files if f.startswith('_posts/') and f.endswith('.md')]
+         
+         if md_files:
+             url_list = []
+             seen_urls = set()
              
-             if [ -z "${seen_urls[$URL]}" ]; then
-               seen_urls[$URL]=1
-               URL_LIST="$URL_LIST\"$URL\","
-               echo "Processing: $URL"
-             fi
-           done
-           
-           URL_LIST="${URL_LIST%,}]"
-           echo "Sample URL format:"
-           echo $URL_LIST | grep -o '"https://[^"]*"' | head -n 1
-           
+             for file in md_files:
+                 # Extract filename without path and date prefix
+                 filename = os.path.basename(file)
+                 # Remove date prefix (YYYY-MM-DD-)
+                 url_path = filename[11:].replace('.md', '')
+                 # Remove double hyphens and trailing hyphens
+                 url_path = url_path.replace('--', '-').rstrip('-')
+                 
+                 # Create full URL
+                 url = f"https://shopshop2.github.io/shopping/{url_path}/"
+                 
+                 if url not in seen_urls:
+                     seen_urls.add(url)
+                     url_list.append(url)
+                     print(f"Processing: {url}")
+             
+             # Prepare API request
+             data = {
+                 "host": "shopshop2.github.io",
+                 "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+                 "urlList": url_list,
+                 "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+             }
+             
+             # Save data for curl
+             with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+                 json.dump(data, f, ensure_ascii=False)
+             
+             print("URL List prepared successfully")
+         else:
+             print("No markdown files found in _posts directory in the last 24 hours")
+             exit(0)
+         EOF
+         
+         if [ -f "/tmp/indexnow_data.json" ]; then
            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
              -H "Content-Type: application/json" \
-             -d "{
-               \"host\": \"shopshop2.github.io\",
-               \"key\": \"87ae650ca3ec4b2daec3bee8fa7ac2e3\",
-               \"urlList\": $URL_LIST,
-               \"keyLocation\": \"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt\"
-             }")
+             -d @/tmp/indexnow_data.json)
            
            echo "IndexNow API Response:"
            echo "$response"
@@ -81,10 +97,7 @@ jobs:
              echo "Error submitting URLs. Please check the response above."
              exit 1
            fi
-         else
-           echo "No markdown files found in _posts directory in the last 24 hours"
          fi
-
      - name: Report status
        if: always()
        run: |
