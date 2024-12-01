@@ -13,21 +13,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Setup Git
-        run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-          git fetch --all
-          git pull origin master
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
       - name: Get changed files and submit URLs
         run: |
-          echo "Getting recent changes:"
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty="format:" origin/master | sort -u | grep -E "^_posts/.*\.md$" || true)
-          echo "Modified files in last 24 hours:"
+          # Debug: Show git status
+          echo "Git Status:"
+          git status
+          
+          # Debug: Show recent commits
+          echo "Recent commits:"
+          git log --since="24 hours ago" --pretty=format:"%h - %an, %ar : %s"
+          
+          # Get changed files
+          echo -e "\nGetting modified files:"
+          CHANGED_FILES=$(git diff --name-only HEAD@{24.hours.ago} | grep -E "^_posts/.*\.md$" || true)
+          echo "Changed files found:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
