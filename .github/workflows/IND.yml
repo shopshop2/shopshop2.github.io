@@ -1,127 +1,116 @@
 name: 'IND'
 on:
-  schedule:
-    - cron: '25 19 * * *'
-  workflow_dispatch:
+ schedule:
+   - cron: '25 19 * * *'
+ workflow_dispatch:
 jobs:
-  submit-urls:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+ submit-urls:
+   runs-on: ubuntu-latest
+   permissions:
+     contents: read
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
 
-      - name: Get modified files
-        run: |
-          echo "Getting repository information..."
-          # 모든 변경 사항 가져오기
-          git fetch --all --prune
-          git pull --all
-          
-          echo -e "\nChecking git history..."
-          git log --since="24 hours ago" --pretty=fuller
-          
-          echo -e "\nListing changed files..."
-          CHANGED_FILES=$(git whatchanged --since="24 hours ago" --name-only --pretty="" | grep -E "^_posts/.*\.md$" | sort -u)
-          
-          if [ ! -z "$CHANGED_FILES" ]; then
-            echo "Found modified files:"
-            echo "$CHANGED_FILES"
-            
-            # 파일 수정 시간 확인
-            RESULT=""
-            while IFS= read -r file; do
-              if [ -f "$file" ]; then
-                FILE_TIME=$(git log -1 --format="%at" -- "$file")
-                NOW=$(date +%s)
-                DIFF=$((NOW - FILE_TIME))
-                echo "File: $file"
-                echo "Last modified: $(date -d @${FILE_TIME})"
-                echo "Age: $((DIFF / 3600)) hours ago"
-                
-                if [ $DIFF -le 86400 ]; then
-                  RESULT="${RESULT}${file}"$'\n'
-                  echo "Added to result list"
-                fi
-              fi
-            done <<< "$CHANGED_FILES"
-            CHANGED_FILES="$RESULT"
-          else
-            echo "No modified files found in git log"
-          fi
-          
-          echo -e "\nFinal list of files to process:"
-          echo "$CHANGED_FILES"
-          
-          if [ ! -z "$CHANGED_FILES" ]; then
-            python3 << 'EOL'
+     - name: Get modified files
+       run: |
+         # 모든 변경 사항 가져오기
+         git fetch --all --prune
+         git pull --all
+         
+         # 24시간 이내의 커밋들에서 변경된 파일 찾기
+         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty="" | grep -E "^_posts/.*\.md$" | sort -u || true)
+         
+         echo "Files changed in last 24 hours:"
+         echo "$CHANGED_FILES"
+         
+         # 각 파일의 수정 시간 확인
+         RESULT=""
+         while IFS= read -r file; do
+           if [ ! -z "$file" ] && [ -f "$file" ]; then
+             STAT=$(git log -1 --format="%ct" -- "$file")
+             NOW=$(date +%s)
+             DIFF=$((NOW - STAT))
+             echo "File: $file (modified $((DIFF / 3600)) hours ago)"
+             if [ $DIFF -le 86400 ]; then
+               RESULT="${RESULT}${file}"$'\n'
+               echo "-> Added to processing list"
+             fi
+           fi
+         done <<< "$CHANGED_FILES"
+         
+         CHANGED_FILES="$RESULT"
+         echo -e "\nFinal list of files to process:"
+         echo "$CHANGED_FILES"
+         
+         if [ ! -z "$CHANGED_FILES" ]; then
+           python3 << 'EOL'
 import os
 import json
 import urllib.parse
 import sys
 
 def decode_url_path(path):
-    try:
-        decoded = urllib.parse.unquote(path)
-        if decoded.startswith('_posts/'):
-            decoded = decoded[len('_posts/'):].split('.md')[0]
-        if decoded.startswith('2024-03-'):
-            decoded = decoded[11:]
-        return decoded
-    except Exception as e:
-        print(f"Error decoding path: {e}", file=sys.stderr)
-        return path
+   try:
+       decoded = urllib.parse.unquote(path)
+       if decoded.startswith('_posts/'):
+           decoded = decoded[len('_posts/'):].split('.md')[0]
+       if decoded.startswith('2024-03-'):
+           decoded = decoded[11:]
+       return decoded
+   except Exception as e:
+       print(f"Error decoding path: {e}", file=sys.stderr)
+       return path
 
 changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
 url_list = []
 seen_urls = set()
 
 for file in changed_files:
-    if file.strip():
-        decoded_path = decode_url_path(file)
-        cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
-        url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
-        if url not in seen_urls:
-            seen_urls.add(url)
-            url_list.append(url)
-            print(f"Processing: {url}")
+   if file.strip():
+       decoded_path = decode_url_path(file)
+       cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
+       url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
+       if url not in seen_urls:
+           seen_urls.add(url)
+           url_list.append(url)
+           print(f"Processing: {url}")
 
 if url_list:
-    data = {
-        "host": "shopshop2.github.io",
-        "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
-        "urlList": url_list,
-        "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
-    }
-    with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print("URL List prepared successfully")
+   data = {
+       "host": "shopshop2.github.io",
+       "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+       "urlList": url_list,
+       "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+   }
+   with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+       json.dump(data, f, ensure_ascii=False, indent=2)
+   print("URL List prepared successfully")
 else:
-    print("No valid URLs found to process")
-    sys.exit(1)
+   print("No valid URLs found to process")
+   sys.exit(1)
 EOL
 
-            if [ -f "/tmp/indexnow_data.json" ]; then
-              response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-                -H "Content-Type: application/json" \
-                -d @/tmp/indexnow_data.json)
-              
-              echo "IndexNow API Response:"
-              echo "$response"
-              
-              if echo "$response" | grep -q "HTTP Status: 200"; then
-                echo "URLs successfully submitted to search engines!"
-              else
-                echo "Error submitting URLs. Please check the response above."
-                exit 1
-              fi
-            fi
-          else
-            echo "No markdown files found in _posts directory in the last 24 hours"
-            exit 0
-          fi
-        env:
-          CHANGED_FILES: "$CHANGED_FILES"
+           if [ -f "/tmp/indexnow_data.json" ]; then
+             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+               -H "Content-Type: application/json" \
+               -d @/tmp/indexnow_data.json)
+             
+             echo "IndexNow API Response:"
+             echo "$response"
+             
+             if echo "$response" | grep -q "HTTP Status: 200"; then
+               echo "URLs successfully submitted to search engines!"
+             else
+               echo "Error submitting URLs. Please check the response above."
+               exit 1
+             fi
+           fi
+         else
+           echo "No markdown files found in _posts directory in the last 24 hours"
+           exit 0
+         fi
+       env:
+         CHANGED_FILES: "$CHANGED_FILES"
