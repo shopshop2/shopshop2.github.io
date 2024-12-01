@@ -1,69 +1,45 @@
 name: 'IND'
 on:
-  schedule:
-    - cron: '25 19 * * *'
-  workflow_dispatch:
+ schedule:
+   - cron: '25 19 * * *'
+ workflow_dispatch:
 jobs:
-  submit-urls:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+ submit-urls:
+   runs-on: ubuntu-latest
+   permissions:
+     contents: read
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
 
-      - name: Get modified files
-        run: |
-          echo "Last 10 commits:"
-          git log --oneline -n 10
-          
-          # 배치 업로드 커밋의 파일 목록 가져오기
-          BATCH_COMMIT=$(git log --format="%H" --grep="Batch upload" -n 1)
-          if [ ! -z "$BATCH_COMMIT" ]; then
-            echo -e "\nFound batch upload commit: $BATCH_COMMIT"
-            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $BATCH_COMMIT | grep -E "^_posts/.*\.md$" || true)
-            
-            if [ ! -z "$CHANGED_FILES" ]; then
-              echo "Files from batch upload:"
-              echo "$CHANGED_FILES"
-              
-              # 각 파일의 커밋 정보 출력
-              RESULT=""
-              while IFS= read -r file; do
-                if [ -f "$file" ]; then
-                  COMMIT_INFO=$(git log -1 --format="%h - %ar" -- "$file")
-                  echo "File: $file ($COMMIT_INFO)"
-                  RESULT="${RESULT}${file}"$'\n'
-                fi
-              done <<< "$CHANGED_FILES"
-              
-              CHANGED_FILES="$RESULT"
-            fi
-          fi
-          
-          if [ ! -z "$CHANGED_FILES" ]; then
-            python3 -c 'import os,json,urllib.parse,sys; def decode_url_path(path): return urllib.parse.unquote(path)[len("_posts/"):].split(".md")[0][11:] if urllib.parse.unquote(path).startswith("_posts/") and urllib.parse.unquote(path).startswith("2024-03-") else path; changed_files=os.environ.get("CHANGED_FILES","").splitlines(); url_list=[f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" for file in changed_files if file.strip()]; [print(f"Processing: {url}") for url in url_list]; data={"host":"shopshop2.github.io","key":"87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList":url_list,"keyLocation":"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None; json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else (print("No valid URLs found to process") or sys.exit(1))'
+     - name: Get modified files
+       run: |
+         echo "Getting files from recent batch upload commit..."
+         CHANGED_FILES=$(git log -1 adff2f43 --name-only --pretty="" | grep -E "^_posts/.*\.md$" || true)
+         
+         if [ ! -z "$CHANGED_FILES" ]; then
+           python3 -c 'import os,json,urllib.parse,sys; def decode_url_path(path): return urllib.parse.unquote(path)[len("_posts/"):].split(".md")[0][11:] if urllib.parse.unquote(path).startswith("_posts/") and urllib.parse.unquote(path).startswith("2024-03-") else path; changed_files=os.environ.get("CHANGED_FILES","").splitlines(); url_list=[f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" for file in changed_files if file.strip()]; [print(f"Processing: {url}") for url in url_list]; data={"host":"shopshop2.github.io","key":"87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList":url_list,"keyLocation":"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None; json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else (print("No valid URLs found to process") or sys.exit(1))'
 
-            if [ -f "/tmp/indexnow_data.json" ]; then
-              response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-                -H "Content-Type: application/json" \
-                -d @/tmp/indexnow_data.json)
-              
-              echo "IndexNow API Response:"
-              echo "$response"
-              
-              if echo "$response" | grep -q "HTTP Status: 200"; then
-                echo "URLs successfully submitted to search engines!"
-              else
-                echo "Error submitting URLs. Please check the response above."
-                exit 1
-              fi
-            fi
-          else
-            echo "No markdown files found in _posts directory in the last 24 hours"
-            exit 0
-          fi
-        env:
-          CHANGED_FILES: "$CHANGED_FILES"
+           if [ -f "/tmp/indexnow_data.json" ]; then
+             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+               -H "Content-Type: application/json" \
+               -d @/tmp/indexnow_data.json)
+             
+             echo "IndexNow API Response:"
+             echo "$response"
+             
+             if echo "$response" | grep -q "HTTP Status: 200"; then
+               echo "URLs successfully submitted to search engines!"
+             else
+               echo "Error submitting URLs. Please check the response above."
+               exit 1
+             fi
+           fi
+         else
+           echo "No markdown files found in the batch upload commit"
+           exit 0
+         fi
+       env:
+         CHANGED_FILES: "$CHANGED_FILES"
