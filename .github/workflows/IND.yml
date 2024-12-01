@@ -17,7 +17,17 @@ jobs:
      - name: Get modified files
        run: |
          echo "Getting files from recent batch upload commit..."
-         CHANGED_FILES=$(git log -1 adff2f43 --name-only --pretty="" | grep -E "^_posts/.*\.md$" || true)
+         # 이전 commit 해시
+         prev_commit=d09218d4
+         
+         # 현재 commit 해시  
+         curr_commit=adff2f43
+         
+         echo "Checking files between $prev_commit and $curr_commit"
+         
+         CHANGED_FILES=$(git diff --name-only $prev_commit $curr_commit | grep -E "^_posts/.*\.md$" || true)
+         echo "Found files:"
+         echo "$CHANGED_FILES"
          
          if [ ! -z "$CHANGED_FILES" ]; then
            python3 -c 'import os,json,urllib.parse,sys; def decode_url_path(path): return urllib.parse.unquote(path)[len("_posts/"):].split(".md")[0][11:] if urllib.parse.unquote(path).startswith("_posts/") and urllib.parse.unquote(path).startswith("2024-03-") else path; changed_files=os.environ.get("CHANGED_FILES","").splitlines(); url_list=[f"https://shopshop2.github.io/shopping/{"-".join(filter(None, decode_url_path(file).split("-")))}/" for file in changed_files if file.strip()]; [print(f"Processing: {url}") for url in url_list]; data={"host":"shopshop2.github.io","key":"87ae650ca3ec4b2daec3bee8fa7ac2e3","urlList":url_list,"keyLocation":"https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"} if url_list else None; json.dump(data, open("/tmp/indexnow_data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2) if data else (print("No valid URLs found to process") or sys.exit(1))'
@@ -38,7 +48,7 @@ jobs:
              fi
            fi
          else
-           echo "No markdown files found in the batch upload commit"
+           echo "No markdown files found between commits"
            exit 0
          fi
        env:
