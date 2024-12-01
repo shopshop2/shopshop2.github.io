@@ -1,125 +1,140 @@
 name: 'IND'
 on:
- schedule:
-   - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
- workflow_dispatch:
+schedule:
+  - cron: '25 19 * * *'  # UTC 19:25 = KST 04:25
+workflow_dispatch:
 jobs:
- submit-urls:
-   runs-on: ubuntu-latest
-   permissions:
-     contents: read
-   steps:
-     - name: Debug Info
-       run: |
-         echo "GitHub Context:"
-         echo "  Repository: ${{ github.repository }}"
-         echo "  Ref: ${{ github.ref }}"
-         echo "  Event: ${{ github.event_name }}"
-         echo "Time Info:"
-         echo "  UTC: $(date -u)"
-         echo "  KST: $(TZ='Asia/Seoul' date)"
-     - name: Checkout repository
-       uses: actions/checkout@v4
-       with:
-         fetch-depth: 0
-     - name: Install Python
-       uses: actions/setup-python@v4
-       with:
-         python-version: '3.x'
-     - name: Get changed files and submit URLs
-       run: |
-         echo "Checking recent commits:"
-         # 변경된 파일 목록을 직접 찾아서 변수에 저장
-         CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
-         
-         if [ ! -z "$CHANGED_FILES" ]; then
-           # Python script to handle URL conversion
-           python3 - <<EOF
-         import os
-         import json
-         import urllib.parse
-         import sys
-         
-         def decode_url_path(path):
-             try:
-                 # URL 디코딩
-                 decoded = urllib.parse.unquote(path)
-                 # 날짜 부분 제거
-                 if decoded.startswith('_posts/'):
-                     decoded = decoded[len('_posts/'):].split('.md')[0]
-                 if decoded.startswith('2024-03-'):
-                     decoded = decoded[11:]
-                 return decoded
-             except Exception as e:
-                 print(f"Error decoding path: {e}", file=sys.stderr)
-                 return path
-         
-         # 환경 변수에서 변경된 파일 목록 읽기
-         changed_files = os.environ['CHANGED_FILES'].split('\n')
-         url_list = []
-         seen_urls = set()
-         
-         for file in changed_files:
-             if file.strip():  # 빈 줄 무시
-                 # URL 디코딩 및 경로 처리
-                 decoded_path = decode_url_path(file)
-                 # 중복 하이픈 제거 및 끝의 하이픈 제거
-                 cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
-                 
-                 # URL 생성
-                 url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
-                 
-                 if url not in seen_urls:
-                     seen_urls.add(url)
-                     url_list.append(url)
-                     print(f"Processing: {url}")
-         
-         if url_list:
-             # API 요청 데이터 준비
-             data = {
-                 "host": "shopshop2.github.io",
-                 "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
-                 "urlList": url_list,
-                 "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
-             }
-             
-             # JSON 데이터 저장
-             with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-                 json.dump(data, f, ensure_ascii=False, indent=2)
-             
-             print("URL List prepared successfully")
-         else:
-             print("No valid URLs found to process")
-             sys.exit(1)
-         EOF
-         
-           if [ -f "/tmp/indexnow_data.json" ]; then
-             response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
-               -H "Content-Type: application/json" \
-               -d @/tmp/indexnow_data.json)
-             
-             echo "IndexNow API Response:"
-             echo "$response"
-             
-             if echo "$response" | grep -q "HTTP Status: 200"; then
-               echo "URLs successfully submitted to search engines!"
-             else
-               echo "Error submitting URLs. Please check the response above."
-               exit 1
-             fi
-           fi
-         else
-           echo "No markdown files found in _posts directory in the last 24 hours"
-           exit 0
-         fi
-       env:
-         CHANGED_FILES: "$CHANGED_FILES"
-     - name: Report status
-       if: always()
-       run: |
-         if [ "${{ job.status }}" = "success" ]; then
-           echo "✅ IndexNow submission completed successfully"
-         else
-           echo "❌ IndexNow submission failed"
-         fi
-         echo "Workflow completed at: $(date)"
+submit-urls:
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+  steps:
+    - name: Debug Info
+      run: |
+        echo "GitHub Context:"
+        echo "  Repository: ${{ github.repository }}"
+        echo "  Ref: ${{ github.ref }}"
+        echo "  Event: ${{ github.event_name }}"
+        echo "Time Info:"
+        echo "  UTC: $(date -u)"
+        echo "  KST: $(TZ='Asia/Seoul' date)"
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Install Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    - name: Get changed files and submit URLs
+      run: |
+        echo "Checking recent commits:"
+        # Git 저장소 상태 확인
+        git status
+        
+        # 모든 브랜치 페치
+        git fetch --all
+        
+        # 24시간 이내의 커밋 로그 확인 (전체 경로 포함)
+        git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
+        
+        # 변경된 파일 찾기 (전체 경로 사용)
+        CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
+        echo "Found files:"
+        echo "$CHANGED_FILES"
+        
+        if [ ! -z "$CHANGED_FILES" ]; then
+          python3 - <<EOF
+import os
+import json
+import urllib.parse
+import sys
+
+def decode_url_path(path):
+   try:
+       # URL 디코딩
+       decoded = urllib.parse.unquote(path)
+       # 날짜 부분 제거
+       if decoded.startswith('_posts/'):
+           decoded = decoded[len('_posts/'):].split('.md')[0]
+       if decoded.startswith('2024-03-'):
+           decoded = decoded[11:]
+       return decoded
+   except Exception as e:
+       print(f"Error decoding path: {e}", file=sys.stderr)
+       return path
+
+# 환경 변수에서 변경된 파일 목록 읽기
+changed_files = os.environ['CHANGED_FILES'].split('\n')
+url_list = []
+seen_urls = set()
+
+for file in changed_files:
+   if file.strip(): # 빈 줄 무시
+       # URL 디코딩 및 경로 처리
+       decoded_path = decode_url_path(file)
+       # 중복 하이픈 제거 및 끝의 하이픈 제거
+       cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
+       
+       # URL 생성
+       url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
+       
+       if url not in seen_urls:
+           seen_urls.add(url)
+           url_list.append(url)
+           print(f"Processing: {url}")
+
+if url_list:
+   # API 요청 데이터 준비
+   data = {
+       "host": "shopshop2.github.io",
+       "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+       "urlList": url_list,
+       "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+   }
+   
+   # JSON 데이터 저장
+   with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+       json.dump(data, f, ensure_ascii=False, indent=2)
+   
+   print("URL List prepared successfully")
+else:
+   print("No valid URLs found to process")
+   sys.exit(1)
+EOF
+          
+          if [ -f "/tmp/indexnow_data.json" ]; then
+            response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/indexnow_data.json)
+            
+            echo "IndexNow API Response:"
+            echo "$response"
+            
+            if echo "$response" | grep -q "HTTP Status: 200"; then
+              echo "URLs successfully submitted to search engines!"
+            else
+              echo "Error submitting URLs. Please check the response above."
+              exit 1
+            fi
+          fi
+        else
+          echo "No markdown files found in _posts directory in the last 24 hours"
+          # 디버깅을 위한 추가 정보 출력
+          echo "Current directory contents:"
+          ls -la
+          echo "Posts directory contents:"
+          ls -la _posts/ || echo "_posts directory not found"
+          exit 0
+        fi
+      env:
+        CHANGED_FILES: "$CHANGED_FILES"
+    - name: Report status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ IndexNow submission completed successfully"
+        else
+          echo "❌ IndexNow submission failed"
+        fi
+        echo "Workflow completed at: $(date)"
