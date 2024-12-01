@@ -13,93 +13,96 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
-      - name: Install Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-          
+
       - name: Get modified files
         run: |
           echo "Getting repository information..."
-          git branch -a
-          git status
+          # 모든 변경 사항 가져오기
+          git fetch --all --prune
+          git pull --all
           
-          echo -e "\nGetting recent commits and files..."
-          # 24시간 전 시간을 구함
-          SINCE=$(date -d '24 hours ago' +%s)
-          echo "Checking commits since: $(date -d "@$SINCE")"
+          echo -e "\nChecking git history..."
+          git log --since="24 hours ago" --pretty=fuller
           
-          # 변경된 파일 찾기
-          CHANGED_FILES=$(git log --since="@$SINCE" --name-only --no-merges --pretty=format: | grep -E "^_posts/.*\.md$" | sort -u)
+          echo -e "\nListing changed files..."
+          CHANGED_FILES=$(git whatchanged --since="24 hours ago" --name-only --pretty="" | grep -E "^_posts/.*\.md$" | sort -u)
           
-          # 파일 존재 여부와 수정 시간 확인
-          RESULT=""
-          while IFS= read -r file; do
-            if [ -f "$file" ]; then
-              STAT=$(stat -c %Y "$file")
-              NOW=$(date +%s)
-              DIFF=$((NOW - STAT))
-              echo "File: $file, Age: $DIFF seconds ($(($DIFF / 3600)) hours old)"
-              if [ $DIFF -le 86400 ]; then  # 24시간 = 86400초
-                RESULT="${RESULT}${file}"$'\n'
-                echo "Added to result: $file"
+          if [ ! -z "$CHANGED_FILES" ]; then
+            echo "Found modified files:"
+            echo "$CHANGED_FILES"
+            
+            # 파일 수정 시간 확인
+            RESULT=""
+            while IFS= read -r file; do
+              if [ -f "$file" ]; then
+                FILE_TIME=$(git log -1 --format="%at" -- "$file")
+                NOW=$(date +%s)
+                DIFF=$((NOW - FILE_TIME))
+                echo "File: $file"
+                echo "Last modified: $(date -d @${FILE_TIME})"
+                echo "Age: $((DIFF / 3600)) hours ago"
+                
+                if [ $DIFF -le 86400 ]; then
+                  RESULT="${RESULT}${file}"$'\n'
+                  echo "Added to result list"
+                fi
               fi
-            fi
-          done <<< "$CHANGED_FILES"
+            done <<< "$CHANGED_FILES"
+            CHANGED_FILES="$RESULT"
+          else
+            echo "No modified files found in git log"
+          fi
           
-          # 결과 저장
-          CHANGED_FILES="$RESULT"
-          echo -e "\nFinal modified files in last 24 hours:"
+          echo -e "\nFinal list of files to process:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
             python3 << 'EOL'
-          import os
-          import json
-          import urllib.parse
-          import sys
+import os
+import json
+import urllib.parse
+import sys
 
-          def decode_url_path(path):
-              try:
-                  decoded = urllib.parse.unquote(path)
-                  if decoded.startswith('_posts/'):
-                      decoded = decoded[len('_posts/'):].split('.md')[0]
-                  if decoded.startswith('2024-03-'):
-                      decoded = decoded[11:]
-                  return decoded
-              except Exception as e:
-                  print(f"Error decoding path: {e}", file=sys.stderr)
-                  return path
+def decode_url_path(path):
+    try:
+        decoded = urllib.parse.unquote(path)
+        if decoded.startswith('_posts/'):
+            decoded = decoded[len('_posts/'):].split('.md')[0]
+        if decoded.startswith('2024-03-'):
+            decoded = decoded[11:]
+        return decoded
+    except Exception as e:
+        print(f"Error decoding path: {e}", file=sys.stderr)
+        return path
 
-          changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
-          url_list = []
-          seen_urls = set()
+changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
+url_list = []
+seen_urls = set()
 
-          for file in changed_files:
-              if file.strip():
-                  decoded_path = decode_url_path(file)
-                  cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
-                  url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
-                  if url not in seen_urls:
-                      seen_urls.add(url)
-                      url_list.append(url)
-                      print(f"Processing: {url}")
+for file in changed_files:
+    if file.strip():
+        decoded_path = decode_url_path(file)
+        cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
+        url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
+        if url not in seen_urls:
+            seen_urls.add(url)
+            url_list.append(url)
+            print(f"Processing: {url}")
 
-          if url_list:
-              data = {
-                  "host": "shopshop2.github.io",
-                  "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
-                  "urlList": url_list,
-                  "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
-              }
-              with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-                  json.dump(data, f, ensure_ascii=False, indent=2)
-              print("URL List prepared successfully")
-          else:
-              print("No valid URLs found to process")
-              sys.exit(1)
-          EOL
+if url_list:
+    data = {
+        "host": "shopshop2.github.io",
+        "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+        "urlList": url_list,
+        "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+    }
+    with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("URL List prepared successfully")
+else:
+    print("No valid URLs found to process")
+    sys.exit(1)
+EOL
 
             if [ -f "/tmp/indexnow_data.json" ]; then
               response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
