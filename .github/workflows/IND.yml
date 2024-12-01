@@ -9,15 +9,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Debug Info
-        run: |
-          echo "GitHub Context:"
-          echo "  Repository: ${{ github.repository }}"
-          echo "  Ref: ${{ github.ref }}"
-          echo "  Event: ${{ github.event_name }}"
-          echo "Time Info:"
-          echo "  UTC: $(date -u)"
-          echo "  KST: $(TZ='Asia/Seoul' date)"
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -28,61 +19,60 @@ jobs:
           python-version: '3.x'
       - name: Get changed files and submit URLs
         run: |
-          echo "Checking recent commits:"
-          git status
-          git fetch --all
-          git log --since="24 hours ago" --name-only --pretty=format:"%h - %an, %ar : %s"
-          CHANGED_FILES=$(git log --since="24 hours ago" --name-only --pretty=format: | grep -E "^_posts/.*\.md$" || true)
+          echo "Checking files in _posts directory:"
+          # 24시간 이내에 수정된 마크다운 파일 찾기
+          CHANGED_FILES=$(find _posts -name "*.md" -mtime -1 -type f)
           echo "Found files:"
           echo "$CHANGED_FILES"
+          
           if [ ! -z "$CHANGED_FILES" ]; then
             python3 - << 'EOF'
-          import os
-          import json
-          import urllib.parse
-          import sys
+import os
+import json
+import urllib.parse
+import sys
 
-          def decode_url_path(path):
-              try:
-                  decoded = urllib.parse.unquote(path)
-                  if decoded.startswith('_posts/'):
-                      decoded = decoded[len('_posts/'):].split('.md')[0]
-                  if decoded.startswith('2024-03-'):
-                      decoded = decoded[11:]
-                  return decoded
-              except Exception as e:
-                  print(f"Error decoding path: {e}", file=sys.stderr)
-                  return path
+def decode_url_path(path):
+    try:
+        decoded = urllib.parse.unquote(path)
+        if decoded.startswith('_posts/'):
+            decoded = decoded[len('_posts/'):].split('.md')[0]
+        if decoded.startswith('2024-03-'):
+            decoded = decoded[11:]
+        return decoded
+    except Exception as e:
+        print(f"Error decoding path: {e}", file=sys.stderr)
+        return path
 
-          changed_files = os.environ['CHANGED_FILES'].split('\n')
-          url_list = []
-          seen_urls = set()
+changed_files = os.environ['CHANGED_FILES'].split('\n')
+url_list = []
+seen_urls = set()
 
-          for file in changed_files:
-              if file.strip():
-                  decoded_path = decode_url_path(file)
-                  cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
-                  url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
-                  if url not in seen_urls:
-                      seen_urls.add(url)
-                      url_list.append(url)
-                      print(f"Processing: {url}")
+for file in changed_files:
+    if file.strip():
+        decoded_path = decode_url_path(file)
+        cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
+        url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
+        if url not in seen_urls:
+            seen_urls.add(url)
+            url_list.append(url)
+            print(f"Processing: {url}")
 
-          if url_list:
-              data = {
-                  "host": "shopshop2.github.io",
-                  "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
-                  "urlList": url_list,
-                  "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
-              }
-              with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-                  json.dump(data, f, ensure_ascii=False, indent=2)
-              print("URL List prepared successfully")
-          else:
-              print("No valid URLs found to process")
-              sys.exit(1)
-          EOF
-
+if url_list:
+    data = {
+        "host": "shopshop2.github.io",
+        "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+        "urlList": url_list,
+        "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+    }
+    with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("URL List prepared successfully")
+else:
+    print("No valid URLs found to process")
+    sys.exit(1)
+EOF
+            
             if [ -f "/tmp/indexnow_data.json" ]; then
               response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
                 -H "Content-Type: application/json" \
