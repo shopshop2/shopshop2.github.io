@@ -13,6 +13,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          
       - name: Setup Git
         run: |
           git config --global user.email "action@github.com"
@@ -21,70 +22,68 @@ jobs:
           git fetch --all --force
           git pull --force origin master
           git status
+          
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
+          
       - name: Get modified files
+        env:
+          CHANGED_FILES: ""
         run: |
           echo "Finding recently modified files..."
-          
-          # 마지막 커밋의 날짜 가져오기
-          LAST_COMMIT_DATE=$(git log -1 --format=%cd --date=iso)
-          echo "Last commit date: $LAST_COMMIT_DATE"
-          
-          # _posts 디렉토리에서 24시간 이내에 수정된 파일 찾기
           CHANGED_FILES=$(find _posts -name "*.md" -mtime -1 -type f)
           echo "Recently modified files:"
           echo "$CHANGED_FILES"
           
           if [ ! -z "$CHANGED_FILES" ]; then
-            python3 - <<'END_PYTHON'
-import os
-import json
-import urllib.parse
-import sys
+            python3 << 'EOL'
+          import os
+          import json
+          import urllib.parse
+          import sys
 
-def decode_url_path(path):
-    try:
-        decoded = urllib.parse.unquote(path)
-        if decoded.startswith('_posts/'):
-            decoded = decoded[len('_posts/'):].split('.md')[0]
-        if decoded.startswith('2024-03-'):
-            decoded = decoded[11:]
-        return decoded
-    except Exception as e:
-        print(f"Error decoding path: {e}", file=sys.stderr)
-        return path
+          def decode_url_path(path):
+              try:
+                  decoded = urllib.parse.unquote(path)
+                  if decoded.startswith('_posts/'):
+                      decoded = decoded[len('_posts/'):].split('.md')[0]
+                  if decoded.startswith('2024-03-'):
+                      decoded = decoded[11:]
+                  return decoded
+              except Exception as e:
+                  print(f"Error decoding path: {e}", file=sys.stderr)
+                  return path
 
-changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
-url_list = []
-seen_urls = set()
+          changed_files = os.environ.get('CHANGED_FILES', '').splitlines()
+          url_list = []
+          seen_urls = set()
 
-for file in changed_files:
-    if file.strip():
-        decoded_path = decode_url_path(file)
-        cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
-        url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
-        if url not in seen_urls:
-            seen_urls.add(url)
-            url_list.append(url)
-            print(f"Processing: {url}")
+          for file in changed_files:
+              if file.strip():
+                  decoded_path = decode_url_path(file)
+                  cleaned_path = '-'.join(filter(None, decoded_path.split('-')))
+                  url = f"https://shopshop2.github.io/shopping/{cleaned_path}/"
+                  if url not in seen_urls:
+                      seen_urls.add(url)
+                      url_list.append(url)
+                      print(f"Processing: {url}")
 
-if url_list:
-    data = {
-        "host": "shopshop2.github.io",
-        "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
-        "urlList": url_list,
-        "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
-    }
-    with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print("URL List prepared successfully")
-else:
-    print("No valid URLs found to process")
-    sys.exit(1)
-END_PYTHON
+          if url_list:
+              data = {
+                  "host": "shopshop2.github.io",
+                  "key": "87ae650ca3ec4b2daec3bee8fa7ac2e3",
+                  "urlList": url_list,
+                  "keyLocation": "https://shopshop2.github.io/87ae650ca3ec4b2daec3bee8fa7ac2e3.txt"
+              }
+              with open('/tmp/indexnow_data.json', 'w', encoding='utf-8') as f:
+                  json.dump(data, f, ensure_ascii=False, indent=2)
+              print("URL List prepared successfully")
+          else:
+              print("No valid URLs found to process")
+              sys.exit(1)
+          EOL
 
             if [ -f "/tmp/indexnow_data.json" ]; then
               response=$(curl -s -w "\nHTTP Status: %{http_code}" -X POST "https://api.indexnow.org/indexnow" \
@@ -105,5 +104,3 @@ END_PYTHON
             echo "No markdown files found in _posts directory in the last 24 hours"
             exit 0
           fi
-        env:
-          CHANGED_FILES: "$CHANGED_FILES"
